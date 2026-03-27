@@ -1,0 +1,5 @@
+{
+  "name": "Chess Duel Arena",
+  "description": "A competitive chess platform where players can wager on their matches, inspired by Chess.com.",
+  "requestFramePermissions": []
+}

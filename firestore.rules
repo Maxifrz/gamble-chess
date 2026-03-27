@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: /users/{userId}
+    // Fields: username, email, balance, elo, winRate, totalMatches, totalWins, winStreak, createdAt, lastActive
+    //
+    // Collection: /matches/{matchId}
+    // Fields: player1, player2, gameMode, wagerAmount, status, winnerId, player1Score, player2Score, startedAt, completedAt
+    //
+    // Collection: /transactions/{txId}
+    // Fields: userId, type, amount, matchId, balanceBefore, balanceAfter, createdAt
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "Maxi.Fritz2405@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['username', 'email', 'balance', 'elo']) &&
+             data.username is string && data.username.size() > 0 && data.username.size() < 50 &&
+             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             data.balance is number && data.elo is number;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function balanceUnchanged() {
+      return !('balance' in request.resource.data.diff(resource.data).affectedKeys());
+    }
+
+    function eloUnchanged() {
+      return !('elo' in request.resource.data.diff(resource.data).affectedKeys());
+    }
+
+    function roleUnchanged() {
+      return !('role' in request.resource.data.diff(resource.data).affectedKeys());
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Anyone logged in can read profiles (for leaderboard/matchmaking)
+      allow read: if isAuthenticated();
+
+      // Users can only create their own profile with starting values
+      allow create: if isOwner(userId) && 
+                    isValidUser(request.resource.data) &&
+                    (request.resource.data.balance == 0 || request.resource.data.balance == 10) &&
+                    request.resource.data.elo == 1200 &&
+                    (request.resource.data.role == 'user' || isAdmin());
+
+      // Users can update their own profile (including balance and elo)
+      allow update: if isOwner(userId) && 
+                    isValidUser(request.resource.data) &&
+                    roleUnchanged();
+      
+      // Admin can do anything
+      allow write: if isAdmin();
+    }
+
+    match /matches/{matchId} {
+      // Participants can read their own matches
+      allow read: if isAuthenticated() && 
+                  (resource.data.player1.uid == request.auth.uid || 
+                   resource.data.player2.uid == request.auth.uid);
+      
+      // Participants can write matches
+      allow write: if isAuthenticated() && 
+                   (request.resource.data.player1.uid == request.auth.uid || 
+                    request.resource.data.player2.uid == request.auth.uid);
+    }
+
+    match /transactions/{txId} {
+      // Users can read only their own transactions
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Users can write their own transactions
+      allow write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+  }
+}

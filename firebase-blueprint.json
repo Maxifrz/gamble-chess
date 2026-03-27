@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and stats",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "format": "email" },
+        "balance": { "type": "number", "description": "Current wallet balance" },
+        "elo": { "type": "integer", "description": "Skill rating" },
+        "winRate": { "type": "number" },
+        "totalMatches": { "type": "integer" },
+        "totalWins": { "type": "integer" },
+        "winStreak": { "type": "integer" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastActive": { "type": "string", "format": "date-time" }
+      },
+      "required": ["username", "email", "balance", "elo", "role"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Wallet balance change record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["match_win", "match_loss", "match_draw", "deposit", "withdrawal", "web3_deposit", "web3_withdrawal"] },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "pending"] },
+        "txHash": { "type": "string" },
+        "walletAddress": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "amount", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/transactions/{txId}": { "schema": "Transaction", "description": "Financial logs" }
+  }
+}
