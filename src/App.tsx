@@ -119,16 +119,21 @@ function AppContent() {
             await runTransaction(db, async (t) => {
               const userDoc = await t.get(userRef);
               if (!userDoc.exists()) return;
-              
+
               const currentBalance = userDoc.data()?.balance || 0;
               const currentElo = userDoc.data()?.elo || 1200;
               const totalMatches = userDoc.data()?.totalMatches || 0;
+              const totalWins = userDoc.data()?.totalWins || 0;
               const winStreak = userDoc.data()?.winStreak || 0;
-              
+              const newTotalWins = data.won ? totalWins + 1 : totalWins;
+              const newTotalMatches = totalMatches + 1;
+
               t.update(userRef, {
                 balance: currentBalance + data.balanceChange,
                 elo: Math.max(0, currentElo + data.eloChange),
-                totalMatches: totalMatches + 1,
+                totalMatches: newTotalMatches,
+                totalWins: newTotalWins,
+                winRate: Math.round((newTotalWins / newTotalMatches) * 100),
                 winStreak: data.won ? winStreak + 1 : 0
               });
               
@@ -1104,6 +1109,7 @@ function ActiveMatchView({ isPractice, botDifficulty, matchData, onComplete, use
   const [playerColor, setPlayerColor] = useState<'w' | 'b'>('w');
   const [moveFrom, setMoveFrom] = useState<string | null>(null);
   const [optionSquares, setOptionSquares] = useState<any>({});
+  const [gameOver, setGameOver] = useState(false);
 
   // Bot Evaluation Function
   const evaluateBoard = (chess: Chess) => {
@@ -1183,7 +1189,9 @@ function ActiveMatchView({ isPractice, botDifficulty, matchData, onComplete, use
       setGame(newGame);
       const moveSan = typeof move === 'string' ? move : move.san;
       setMoveHistory(prev => [...prev, moveSan]);
-      setIsMyTurn(turn === (matchData?.color || (matchData?.white === userProfile?.uid ? 'w' : 'b')));
+      const myColor = matchData?.color || (matchData?.white === userProfile?.uid ? 'w' : 'b');
+      setIsMyTurn(turn === myColor);
+      if (newGame.isGameOver()) setGameOver(true);
     };
 
     on('move_made', handleMoveMade);
@@ -1194,6 +1202,7 @@ function ActiveMatchView({ isPractice, botDifficulty, matchData, onComplete, use
   }, [matchData, userProfile, isPractice]);
 
   useEffect(() => {
+    if (gameOver) return;
     const timer = setInterval(() => {
       if (isMyTurn) {
         setTimeLeft(t => Math.max(0, t - 1));
@@ -1202,7 +1211,7 @@ function ActiveMatchView({ isPractice, botDifficulty, matchData, onComplete, use
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [isMyTurn]);
+  }, [isMyTurn, gameOver]);
 
   function getMoveOptions(square: string) {
     const moves = game.moves({
@@ -1306,14 +1315,9 @@ function ActiveMatchView({ isPractice, botDifficulty, matchData, onComplete, use
           if (gameCopy.isGameOver()) {
             const isWin = gameCopy.isCheckmate() && gameCopy.turn() !== playerColor;
             const isDraw = gameCopy.isDraw() || gameCopy.isStalemate() || gameCopy.isThreefoldRepetition();
-            
-            onComplete({
-              won: isWin,
-              draw: isDraw,
-              payout: 0,
-              eloChange: 0,
-              balanceChange: 0
-            });
+            const score = isWin ? 1 : isDraw ? 0.5 : 0;
+            setGameOver(true);
+            onComplete(isWin, score, 1 - score);
           }
         }
       }, 1000);
@@ -1325,18 +1329,15 @@ function ActiveMatchView({ isPractice, botDifficulty, matchData, onComplete, use
       });
     }
 
-    if (gameCopy.isGameOver()) {
+    if (isPractice && gameCopy.isGameOver()) {
+      // Player's move ended the game (e.g., player checkmated the bot)
       const isWin = gameCopy.isCheckmate() && gameCopy.turn() !== playerColor;
       const isDraw = gameCopy.isDraw() || gameCopy.isStalemate() || gameCopy.isThreefoldRepetition();
-      
-      onComplete({
-        won: isWin,
-        draw: isDraw,
-        payout: 0,
-        eloChange: 0,
-        balanceChange: 0
-      });
+      const score = isWin ? 1 : isDraw ? 0.5 : 0;
+      setGameOver(true);
+      onComplete(isWin, score, 1 - score);
     }
+    // For multiplayer, game-over is handled server-side via 'match_complete' socket event
   }
 
   const formatTime = (seconds: number) => {
